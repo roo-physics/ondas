@@ -9,9 +9,12 @@
         :root { --bg: #121214; --panel: #202024; --text: #e1e1e6; --primary: #04d361; --border: #323238; }
         body { font-family: sans-serif; background-color: var(--bg); color: var(--text); padding: 1rem; }
         .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-        button { padding: 0.8rem; border-radius: 4px; border: none; cursor: pointer; background: var(--primary); font-weight: bold; }
-        .channel-list { display: flex; gap: 0.5rem; margin-bottom: 1rem; overflow-x: auto; }
-        .channel-btn { background: #323238; color: white; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+        .grid-inputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem; }
+        label { font-size: 0.75rem; color: #8d8d99; }
+        input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 0.5rem; border-radius: 4px; box-sizing: border-box; }
+        button { padding: 0.8rem; border-radius: 4px; border: none; cursor: pointer; background: var(--primary); font-weight: bold; width: 100%; }
+        .channel-list { display: flex; gap: 0.5rem; margin: 1rem 0; overflow-x: auto; }
+        .channel-btn { background: #323238; color: white; padding: 0.5rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; white-space: nowrap; }
         .channel-btn.active { border: 2px solid var(--primary); }
         .canvas-container { position: relative; background: #fff; border-radius: 4px; }
         canvas { display: block; width: 100%; height: 250px; }
@@ -21,7 +24,12 @@
 
 <div id="app">
     <div class="card">
-        <h3>Seletor de Canais</h3>
+        <div class="grid-inputs">
+            <label>Ini (Hz)<input type="number" v-model.number="config.minFreq"></label>
+            <label>Fim (Hz)<input type="number" v-model.number="config.maxFreq"></label>
+            <label>Dur (s)<input type="number" v-model.number="config.duration"></label>
+        </div>
+
         <div class="channel-list">
             <div v-for="ch in channels" :key="ch.id" 
                  class="channel-btn" 
@@ -29,13 +37,13 @@
                  @click="activeChannelId = ch.id">
                  {{ ch.name }}
             </div>
-            <button @click="addChannel">+</button>
+            <button @click="addChannel" style="width: auto; padding: 0.5rem">+</button>
         </div>
         
-        <div style="display:flex; gap: 10px; margin-bottom: 1rem;">
-            <button @click="startSweep" :disabled="isRunning">Gravar {{ channels.find(c => c.id === activeChannelId).name }}</button>
-            <button @click="clearActive" style="background:#f75a68">Limpar Canal</button>
-        </div>
+        <button @click="startSweep" :disabled="isRunning">
+            {{ isRunning ? 'Gravando...' : 'Gravar no ' + channels.find(c => c.id === activeChannelId).name }}
+        </button>
+        <button @click="clearActive" style="background:#f75a68; margin-top: 0.5rem;">Limpar Canal Ativo</button>
     </div>
 
     <div class="card">
@@ -46,7 +54,7 @@
 </div>
 
 <script>
-    const { createApp, ref, reactive, onMounted, watch } = Vue;
+    const { createApp, ref, reactive, onMounted } = Vue;
 
     createApp({
         setup() {
@@ -75,7 +83,7 @@
                     ctx.beginPath();
                     ch.data.forEach((p, i) => {
                         const x = ((p.f - config.minFreq) / (config.maxFreq - config.minFreq)) * canvas.width;
-                        const y = canvas.height - (p.a * 3); // Escala fixa para comparação visual
+                        const y = canvas.height - (p.a * 2); 
                         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
                     });
                     ctx.strokeStyle = ch.color;
