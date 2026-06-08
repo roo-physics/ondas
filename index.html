@@ -3,357 +3,132 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Analisador de Ressonância Acústica</title>
+    <title>Analisador Multicanal</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-        :root {
-            --bg: #121214;
-            --panel: #202024;
-            --text: #e1e1e6;
-            --primary: #04d361;
-            --highlight: #8257e5;
-            --border: #323238;
-        }
-
-        /* Reset básico e bloqueio de zoom acidental com duplo toque no celular */
-        * { box-sizing: border-box; touch-action: manipulation; }
-
-        body { 
-            font-family: 'Segoe UI', system-ui, sans-serif; 
-            background-color: var(--bg); 
-            color: var(--text); 
-            margin: 0; 
-            padding: 1rem; /* Menos margem no celular */
-            display: flex; 
-            justify-content: center; 
-        }
-
-        #app { width: 100%; max-width: 800px; }
-        
-        h2 { margin-top: 0; font-size: 1.5rem; text-align: center; }
-
-        .card { 
-            background: var(--panel); 
-            border: 1px solid var(--border); 
-            border-radius: 8px; 
-            padding: 1rem; /* Padding mais enxuto para mobile */
-            margin-bottom: 1rem; 
-        }
-
-        /* Layout responsivo dos inputs */
-        .grid-inputs { 
-            display: grid; 
-            grid-template-columns: 1fr; /* Empilha no mobile */
-            gap: 1rem; 
-            margin-bottom: 1.5rem; 
-        }
-
-        label { display: flex; flex-direction: column; font-size: 0.875rem; color: #8d8d99; gap: 0.5rem; }
-        
-        /* Inputs maiores para facilitar o toque */
-        input { 
-            background: var(--bg); 
-            border: 1px solid var(--border); 
-            color: var(--text); 
-            padding: 1rem; /* Mais alto para o dedo */
-            border-radius: 4px; 
-            font-size: 1.1rem; 
-            outline: none; 
-            text-align: center;
-        }
-        
-        input:focus { border-color: var(--primary); }
-        
-        button { 
-            width: 100%; 
-            padding: 1.2rem; /* Botão generoso para toque */
-            font-size: 1.1rem; 
-            font-weight: bold; 
-            border: none; 
-            border-radius: 4px; 
-            cursor: pointer; 
-            transition: background 0.2s; 
-            background: var(--primary); 
-            color: #000; 
-        }
-        
-        button:disabled { background: var(--border); color: #8d8d99; cursor: not-allowed; }
-        
-        .status-bar { 
-            margin-top: 1rem; 
-            text-align: center; 
-            font-family: monospace; 
-            font-size: 1rem; 
-            color: var(--primary); 
-            word-wrap: break-word; /* Evita que o texto quebre o layout no celular */
-        }
-        
-        /* Layout responsivo do Inspetor */
-        .inspector { 
-            margin-top: 1rem; 
-            padding: 1rem; 
-            background: #1a1a1e; 
-            border-left: 4px solid var(--highlight); 
-            border-radius: 4px; 
-            display: flex; 
-            flex-direction: column; /* Empilha o texto no celular */
-            gap: 0.5rem;
-            align-items: flex-start;
-        }
-        
-        .inspector-data { font-family: monospace; font-size: 1.2rem; color: var(--highlight); }
-
-        .canvas-container { position: relative; background: #fff; border-radius: 4px; overflow: hidden; cursor: crosshair; }
-        canvas { display: block; width: 100%; height: 250px; /* Gráfico levemente mais baixo para caber na tela do celular sem rolar muito */ }
-        
-        .axis-label { position: absolute; color: #8d8d99; font-size: 0.7rem; font-weight: bold; pointer-events: none; }
-        [v-cloak] { display: none; }
-
-        /* --- MEDIA QUERY PARA TABLETS E DESKTOPS --- */
-        @media (min-width: 600px) {
-            body { padding: 2rem; }
-            .card { padding: 1.5rem; margin-bottom: 1.5rem; }
-            .grid-inputs { grid-template-columns: repeat(3, 1fr); /* Volta para 3 colunas */ }
-            .inspector { flex-direction: row; align-items: center; }
-            canvas { height: 300px; }
-            h2 { text-align: left; }
-        }
+        :root { --bg: #121214; --panel: #202024; --text: #e1e1e6; --primary: #04d361; --border: #323238; }
+        body { font-family: sans-serif; background-color: var(--bg); color: var(--text); padding: 1rem; }
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+        button { padding: 0.8rem; border-radius: 4px; border: none; cursor: pointer; background: var(--primary); font-weight: bold; }
+        .channel-list { display: flex; gap: 0.5rem; margin-bottom: 1rem; overflow-x: auto; }
+        .channel-btn { background: #323238; color: white; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; }
+        .channel-btn.active { border: 2px solid var(--primary); }
+        .canvas-container { position: relative; background: #fff; border-radius: 4px; }
+        canvas { display: block; width: 100%; height: 250px; }
     </style>
 </head>
 <body>
 
-    <div id="app" v-cloak>
-        <h2>Analisador de Ressonância</h2>
-
-        <div class="card">
-            <div class="grid-inputs">
-                <label>Freq. Inicial (Hz) <input type="number" v-model.number="config.minFreq" :disabled="isRunning"></label>
-                <label>Freq. Final (Hz) <input type="number" v-model.number="config.maxFreq" :disabled="isRunning"></label>
-                <label>Duração (Seg) <input type="number" v-model.number="config.duration" :disabled="isRunning"></label>
+<div id="app">
+    <div class="card">
+        <h3>Seletor de Canais</h3>
+        <div class="channel-list">
+            <div v-for="ch in channels" :key="ch.id" 
+                 class="channel-btn" 
+                 :class="{active: activeChannelId === ch.id}"
+                 @click="activeChannelId = ch.id">
+                 {{ ch.name }}
             </div>
-            
-            <button @click="startSweep" :disabled="isRunning">
-                {{ isRunning ? 'Executando...' : 'Iniciar Experimento' }}
-            </button>
-
-            <div class="status-bar" v-if="statusText">{{ statusText }}</div>
+            <button @click="addChannel">+</button>
         </div>
-
-        <div class="card" style="padding: 0; border: none;">
-            <div class="canvas-container">
-                <span class="axis-label" style="bottom: 8px; left: 10px;">{{ config.minFreq }} Hz</span>
-                <span class="axis-label" style="bottom: 8px; right: 10px;">{{ config.maxFreq }} Hz</span>
-                <span class="axis-label" style="top: 8px; left: 10px;">Máx: {{ currentScaleY.toFixed(1) }}%</span>
-                <span class="axis-label" style="bottom: 25px; left: 10px;">Mín: 0.0%</span>
-                
-                <canvas id="chartCanvas" width="800" height="300" @click="handleChartClick"></canvas>
-            </div>
-            
-            <div class="inspector" v-if="selectedPoint">
-                <span style="font-size: 0.9rem; color: #ccc;">Ponto Selecionado:</span>
-                <span class="inspector-data">
-                    {{ Math.round(selectedPoint.f) }} Hz | {{ selectedPoint.a.toFixed(1) }} %
-                </span>
-            </div>
-            <div class="inspector" v-else style="color: #8d8d99; border-left-color: #323238; font-size: 0.9rem;">
-                Toque em qualquer lugar do gráfico para inspecionar as coordenadas.
-            </div>
+        
+        <div style="display:flex; gap: 10px; margin-bottom: 1rem;">
+            <button @click="startSweep" :disabled="isRunning">Gravar {{ channels.find(c => c.id === activeChannelId).name }}</button>
+            <button @click="clearActive" style="background:#f75a68">Limpar Canal</button>
         </div>
     </div>
 
-    <script>
-        const { createApp, ref, reactive, onMounted } = Vue;
+    <div class="card">
+        <div class="canvas-container">
+            <canvas id="chartCanvas" width="800" height="300"></canvas>
+        </div>
+    </div>
+</div>
 
-        createApp({
-            setup() {
-                const config = reactive({ minFreq: 100, maxFreq: 3000, duration: 10 });
-                const isRunning = ref(false);
-                const statusText = ref("Status: Pronto");
-                const selectedPoint = ref(null);
-                const currentScaleY = ref(10.0);
-                
-                let dataPoints = [];
-                let audioCtxTone, oscillator, audioCtxMic, analyzer, micStream;
-                let animationFrameId, startTime, canvas, ctx;
+<script>
+    const { createApp, ref, reactive, onMounted, watch } = Vue;
 
-                const drawGrid = () => {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.strokeStyle = '#f0f0f0';
-                    ctx.lineWidth = 1;
+    createApp({
+        setup() {
+            const config = reactive({ minFreq: 400, maxFreq: 1500, duration: 8 });
+            const channels = reactive([
+                { id: 0, name: 'Base', data: [], color: '#04d361' },
+                { id: 1, name: 'Objeto', data: [], color: '#8257e5' }
+            ]);
+            const activeChannelId = ref(0);
+            const isRunning = ref(false);
+            
+            let canvas, ctx, audioCtx, analyzer, micStream, oscillator, startTime, animationFrameId;
+
+            const addChannel = () => {
+                const id = channels.length;
+                const colors = ['#FF5733', '#33FF57', '#3357FF', '#F333FF'];
+                channels.push({ id, name: 'Ch ' + (id+1), data: [], color: colors[id % colors.length] });
+            };
+
+            const clearActive = () => { channels.find(c => c.id === activeChannelId.value).data = []; draw(); };
+
+            const draw = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                channels.forEach(ch => {
+                    if (!ch.data.length) return;
                     ctx.beginPath();
-                    for(let i = 1; i < 10; i++) {
-                        ctx.moveTo(0, (canvas.height/10)*i);
-                        ctx.lineTo(canvas.width, (canvas.height/10)*i);
-                        ctx.moveTo((canvas.width/10)*i, 0);
-                        ctx.lineTo((canvas.width/10)*i, canvas.height);
-                    }
-                    ctx.stroke();
-                };
-
-                const updateChart = () => {
-                    if (dataPoints.length > 0) {
-                        const maxAmpRecorded = Math.max(...dataPoints.map(p => p.a));
-                        currentScaleY.value = Math.min(100, Math.max(10, maxAmpRecorded * 1.1));
-                    } else {
-                        currentScaleY.value = 10.0;
-                    }
-
-                    drawGrid();
-                    if (!dataPoints.length) return;
-
-                    ctx.beginPath();
-                    dataPoints.forEach((p, index) => {
+                    ch.data.forEach((p, i) => {
                         const x = ((p.f - config.minFreq) / (config.maxFreq - config.minFreq)) * canvas.width;
-                        const y = canvas.height - ((p.a / currentScaleY.value) * canvas.height);
-                        index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                        const y = canvas.height - (p.a * 3); // Escala fixa para comparação visual
+                        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
                     });
+                    ctx.strokeStyle = ch.color;
                     ctx.lineWidth = 2;
-                    ctx.strokeStyle = '#04d361';
                     ctx.stroke();
+                });
+            };
 
-                    if (selectedPoint.value) {
-                        const sx = ((selectedPoint.value.f - config.minFreq) / (config.maxFreq - config.minFreq)) * canvas.width;
-                        const sy = canvas.height - ((selectedPoint.value.a / currentScaleY.value) * canvas.height);
-                        
-                        ctx.beginPath();
-                        ctx.arc(sx, sy, 6, 0, 2 * Math.PI);
-                        ctx.fillStyle = '#8257e5';
-                        ctx.fill();
-                        ctx.strokeStyle = '#fff';
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
-                    }
-                };
+            const startSweep = async () => {
+                isRunning.value = true;
+                const targetChannel = channels.find(c => c.id === activeChannelId.value);
+                targetChannel.data = [];
+                
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false }});
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyzer = audioCtx.createAnalyser();
+                audioCtx.createMediaStreamSource(micStream).connect(analyzer);
+                
+                oscillator = audioCtx.createOscillator();
+                oscillator.frequency.setValueAtTime(config.minFreq, audioCtx.currentTime);
+                oscillator.frequency.linearRampToValueAtTime(config.maxFreq, audioCtx.currentTime + config.duration);
+                oscillator.connect(audioCtx.destination);
+                oscillator.start();
 
-                const handleChartClick = (event) => {
-                    if (!dataPoints.length) return;
-
-                    const rect = canvas.getBoundingClientRect();
-                    
-                    // Tratamento unificado para toque (mobile) ou clique (desktop)
-                    let clientX = event.clientX;
-                    if (event.touches && event.touches.length > 0) {
-                        clientX = event.touches[0].clientX;
-                    }
-
-                    const clickX = clientX - rect.left;
-                    const scaleX = canvas.width / rect.width;
-                    const canvasX = clickX * scaleX;
-
-                    const clickedFreq = config.minFreq + (canvasX / canvas.width) * (config.maxFreq - config.minFreq);
-
-                    let closest = dataPoints[0];
-                    let minDiff = Math.abs(dataPoints[0].f - clickedFreq);
-
-                    for (let i = 1; i < dataPoints.length; i++) {
-                        let diff = Math.abs(dataPoints[i].f - clickedFreq);
-                        if (diff < minDiff) {
-                            minDiff = diff;
-                            closest = dataPoints[i];
-                        }
-                    }
-
-                    selectedPoint.value = closest;
-                    updateChart();
-                };
-
-                const processAudioFrame = () => {
-                    if (!isRunning.value) return;
-
+                startTime = performance.now();
+                const loop = () => {
                     const elapsed = (performance.now() - startTime) / 1000;
-                    if (elapsed >= config.duration) {
-                        finalizeSweep();
-                        return;
-                    }
-
-                    const currentFreq = config.minFreq + ((config.maxFreq - config.minFreq) * (elapsed / config.duration));
+                    if (elapsed >= config.duration) { finalize(); return; }
+                    
+                    const freq = config.minFreq + ((config.maxFreq - config.minFreq) * (elapsed / config.duration));
                     const buffer = new Uint8Array(analyzer.frequencyBinCount);
                     analyzer.getByteTimeDomainData(buffer);
-
                     let min = 255, max = 0;
-                    for (let i = 0; i < buffer.length; i++) {
-                        if (buffer[i] < min) min = buffer[i];
-                        if (buffer[i] > max) max = buffer[i];
-                    }
+                    for (let b of buffer) { if(b < min) min = b; if(b > max) max = b; }
                     
-                    const amplitude = ((max - min) / 255.0) * 100;
-
-                    dataPoints.push({ f: currentFreq, a: amplitude });
-                    
-                    // Status mais compacto para não quebrar linha no mobile
-                    statusText.value = `${Math.round(currentFreq)}Hz | Vol: ${amplitude.toFixed(1)}%`;
-                    
-                    updateChart();
-                    animationFrameId = requestAnimationFrame(processAudioFrame);
+                    targetChannel.data.push({ f: freq, a: (max - min) });
+                    draw();
+                    animationFrameId = requestAnimationFrame(loop);
                 };
+                loop();
+            };
 
-                const startSweep = async () => {
-                    if (isRunning.value) return;
-                    
-                    dataPoints = [];
-                    selectedPoint.value = null;
-                    updateChart();
-                    statusText.value = "Aguardando microfone...";
+            const finalize = () => {
+                isRunning.value = false;
+                oscillator.stop(); micStream.getTracks().forEach(t => t.stop());
+                cancelAnimationFrame(animationFrameId);
+            };
 
-                    try {
-                        micStream = await navigator.mediaDevices.getUserMedia({
-                            audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false }
-                        });
-                        
-                        isRunning.value = true;
-                        audioCtxMic = new (window.AudioContext || window.webkitAudioContext)();
-                        analyzer = audioCtxMic.createAnalyser();
-                        analyzer.fftSize = 2048;
-                        audioCtxMic.createMediaStreamSource(micStream).connect(analyzer);
+            onMounted(() => { canvas = document.getElementById('chartCanvas'); ctx = canvas.getContext('2d'); draw(); });
 
-                        audioCtxTone = new (window.AudioContext || window.webkitAudioContext)();
-                        oscillator = audioCtxTone.createOscillator();
-                        oscillator.type = 'sine';
-                        
-                        const now = audioCtxTone.currentTime;
-                        oscillator.frequency.setValueAtTime(config.minFreq, now);
-                        oscillator.frequency.linearRampToValueAtTime(config.maxFreq, now + config.duration);
-                        
-                        oscillator.connect(audioCtxTone.destination);
-                        oscillator.start();
-
-                        startTime = performance.now();
-                        processAudioFrame();
-
-                    } catch (err) {
-                        statusText.value = "Erro: Microfone negado.";
-                        console.error(err);
-                        isRunning.value = false;
-                    }
-                };
-
-                const finalizeSweep = () => {
-                    isRunning.value = false;
-                    statusText.value = "Varredura concluída.";
-                    
-                    if (oscillator) { oscillator.stop(); oscillator.disconnect(); }
-                    if (micStream) micStream.getTracks().forEach(t => t.stop());
-                    if (audioCtxMic) audioCtxMic.close();
-                    
-                    cancelAnimationFrame(animationFrameId);
-                };
-
-                onMounted(() => {
-                    canvas = document.getElementById('chartCanvas');
-                    ctx = canvas.getContext('2d');
-                    
-                    // Suporte explícito para toque no Canvas além do clique
-                    canvas.addEventListener('touchstart', (e) => {
-                        e.preventDefault(); // Impede scroll ao tocar no gráfico
-                        handleChartClick(e);
-                    }, { passive: false });
-
-                    updateChart();
-                });
-
-                return { config, isRunning, statusText, startSweep, handleChartClick, selectedPoint, currentScaleY };
-            }
-        }).mount('#app');
-    </script>
+            return { channels, activeChannelId, isRunning, startSweep, clearActive, config, addChannel };
+        }
+    }).mount('#app');
+</script>
 </body>
 </html>
