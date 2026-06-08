@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vue Acoustic Profiler</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #1e1e1e; color: #fff; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .panel { background: #2d2d2d; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        button { background: #42b883; color: #000; border: none; padding: 10px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-right: 10px; }
+        button.danger { background: #ff5555; color: white; }
+        input[type=range] { width: 100%; margin: 15px 0; }
+        canvas { background: #fff; border-radius: 4px; width: 100%; height: 300px; display: block; }
+        .data-readout { font-size: 1.2em; color: #42b883; }
+        .warning { background: #443311; padding: 10px; border-left: 4px solid #ffaa00; margin-bottom: 20px; font-size: 14px;}
+        [v-cloak] { display: none; } /* Prevents raw {{ tags }} from flashing on load */
+    </style>
+</head>
+<body>
+
+    <div id="app" v-cloak>
+        <h2>Vue Acoustic Resonance Profiler</h2>
+        
+        <div class="warning">
+            <strong>Physics Mode:</strong> Ensure your speakers are turned up. Place the microphone near the opening of your resonance tube.
+        </div>
+
+        <div class="panel">
+            <h3>1. The Source (Tone Generator)</h3>
+            <button :class="{ danger: isPlaying }" @click="toggleTone">
+                {{ isPlaying ? 'Stop Tone Sweep' : 'Start Tone Sweep' }}
+            </button>
+            <p>Frequency: <strong class="data-readout">{{ currentFreq }} Hz</strong></p>
+            <input type="range" min="100" max="3000" step="5" v-model.number="currentFreq" @input="updateTone">
+        </div>
+
+        <div class="panel">
+            <h3>2. The Sensor (Microphone Analyzer)</h3>
+            <button :class="{ danger: isListening }" @click="toggleMic">
+                {{ isListening ? 'Stop Microphone' : 'Start Microphone' }}
+            </button>
+            <button class="danger" @click="clearData">Clear Graph</button>
+            <p>Current Amplitude: <strong class="data-readout">{{ amplitudePercent }} %</strong></p>
+        </div>
+
+        <div class="panel" style="position: relative;">
+            <span style="position: absolute; bottom: 25px; left: 25px; color: #888; font-size: 12px;">100 Hz</span>
+            <span style="position: absolute; bottom: 25px; right: 25px; color: #888; font-size: 12px;">3000 Hz</span>
+            <canvas id="graphCanvas" width="800" height="300"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                // --- Reactive State ---
+                const currentFreq = ref(1000);
+                const isPlaying = ref(false);
+                const isListening = ref(false);
+                const amplitudePercent = ref("0.0");
+                
+                let dataPoints = [];
+                let canvas, ctx;
+
+                // Audio Contexts
+                let audioCtxTone, oscillator;
+                let audioCtxMic, analyzer, micStream, animationId;
+
+                // --- Canvas Drawing ---
+                const drawGraph = () => {
+                    if (!ctx) return;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    // Grid
+                    ctx.strokeStyle = '#eee';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    for(let i=1; i<10; i++) {
+                        ctx.moveTo(0, (canvas.height/10)*i);
+                        ctx.lineTo(canvas.width, (canvas.height/10)*i);
+                        ctx.moveTo((canvas.width/10)*i, 0);
+                        ctx.lineTo((canvas.width/10)*i, canvas.height);
+                    }
+                    ctx.stroke();
+
+                    // Data
+                    ctx.fillStyle = '#42b883';
+                    dataPoints.forEach(p => {
+                        const x = ((p.f - 100) / 2900) * canvas.width;
+                        const y = canvas.height - ((p.a / 100) * canvas.height);
+                        ctx.beginPath();
+                        ctx.arc(x, y, 3, 0, 2 * Math.PI);
+                        ctx.fill();
+                    });
+                };
+
+                const clearData = () => {
+                    dataPoints = [];
+                    drawGraph();
+                };
+
+                // --- Tone Generator ---
+                const toggleTone = () => {
+                    if (!audioCtxTone) {
+                        audioCtxTone = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+
+                    if (isPlaying.value) {
+                        oscillator.stop();
+                        oscillator.disconnect();
+                        isPlaying.value = false;
+                    } else {
+                        oscillator = audioCtxTone.createOscillator();
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(currentFreq.value, audioCtxTone.currentTime);
+                        oscillator.connect(audioCtxTone.destination);
+                        oscillator.start();
+                        isPlaying.value = true;
+                    }
+                };
+
+                const updateTone = () => {
+                    if (isPlaying.value && oscillator) {
+                        oscillator.frequency.exponentialRampToValueAtTime(currentFreq.value, audioCtxTone.currentTime + 0.1);
+                    }
+                };
+
+                // --- Microphone Sensor ---
+                const measureAmplitude = () => {
+                    if (!isListening.value) return;
+
+                    const bufferLength = analyzer.frequencyBinCount;
+                    const dataArray = new Uint8Array(bufferLength);
+                    analyzer.getByteTimeDomainData(dataArray);
+
+                    let min = 255, max = 0;
+                    for (let i = 0; i < bufferLength; i++) {
+                        if (dataArray[i] < min) min = dataArray[i];
+                        if (dataArray[i] > max) max = dataArray[i];
+                    }
+                    
+                    let amp = ((max - min) / 255.0) * 100;
+                    amplitudePercent.value = amp.toFixed(1);
+
+                    if (isPlaying.value) {
+                        let existing = dataPoints.find(p => p.f === currentFreq.value);
+                        if (existing) {
+                            existing.a = (existing.a + amp) / 2; // Rolling average
+                        } else {
+                            dataPoints.push({ f: currentFreq.value, a: amp });
+                        }
+                    }
+
+                    drawGraph();
+                    animationId = requestAnimationFrame(measureAmplitude);
+                };
+
+                const toggleMic = async () => {
+                    if (isListening.value) {
+                        cancelAnimationFrame(animationId);
+                        micStream.getTracks().forEach(track => track.stop());
+                        if (audioCtxMic) audioCtxMic.close();
+                        isListening.value = false;
+                        amplitudePercent.value = "0.0";
+                        return;
+                    }
+
+                    try {
+                        micStream = await navigator.mediaDevices.getUserMedia({
+                            audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false }
+                        });
+
+                        audioCtxMic = new (window.AudioContext || window.webkitAudioContext)();
+                        const source = audioCtxMic.createMediaStreamSource(micStream);
+                        analyzer = audioCtxMic.createAnalyser();
+                        analyzer.fftSize = 2048; 
+                        source.connect(analyzer);
+
+                        isListening.value = true;
+                        measureAmplitude();
+                    } catch (err) {
+                        alert("Microphone access denied. Check browser permissions or ensure you are using localhost/https.");
+                        console.error(err);
+                    }
+                };
+
+                // --- Lifecycle ---
+                onMounted(() => {
+                    canvas = document.getElementById('graphCanvas');
+                    ctx = canvas.getContext('2d');
+                    drawGraph();
+                });
+
+                return {
+                    currentFreq,
+                    isPlaying,
+                    isListening,
+                    amplitudePercent,
+                    toggleTone,
+                    updateTone,
+                    toggleMic,
+                    clearData
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
