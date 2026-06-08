@@ -1,223 +1,263 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automated Acoustic Resonance Profiler</title>
+    <title>Analisador de Ressonância Acústica</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-        body { font-family: system-ui, sans-serif; background: #1e1e1e; color: #fff; padding: 20px; max-width: 800px; margin: 0 auto; }
-        .panel { background: #2d2d2d; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        button { background: #42b883; color: #000; border: none; padding: 15px 30px; font-size: 18px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.3s;}
-        button:disabled { background: #666; cursor: not-allowed; color: #aaa; }
-        .input-group { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 10px; }
-        .input-group label { display: flex; flex-direction: column; width: 33%; font-size: 14px; color: #ccc;}
-        input[type=number] { padding: 10px; margin-top: 5px; border-radius: 4px; border: none; font-size: 16px; text-align: center; background: #fff; }
-        canvas { background: #fff; border-radius: 4px; width: 100%; height: 300px; display: block; margin-top: 20px; }
-        .data-readout { font-size: 1.2em; color: #42b883; text-align: center; margin-top: 15px; font-family: monospace; }
+        :root {
+            --bg: #121214;
+            --panel: #202024;
+            --text: #e1e1e6;
+            --primary: #04d361;
+            --highlight: #8257e5;
+            --border: #323238;
+        }
+
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 2rem; display: flex; justify-content: center; }
+        #app { width: 100%; max-width: 800px; }
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+        label { display: flex; flex-direction: column; font-size: 0.875rem; color: #8d8d99; gap: 0.5rem; }
+        input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 0.75rem; border-radius: 4px; font-size: 1rem; outline: none; }
+        input:focus { border-color: var(--primary); }
+        button { width: 100%; padding: 1rem; font-size: 1rem; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; transition: background 0.2s; background: var(--primary); color: #000; }
+        button:disabled { background: var(--border); color: #8d8d99; cursor: not-allowed; }
+        .status-bar { margin-top: 1rem; text-align: center; font-family: monospace; font-size: 1.1rem; color: var(--primary); }
+        
+        .inspector { margin-top: 1rem; padding: 1rem; background: #1a1a1e; border-left: 4px solid var(--highlight); border-radius: 4px; display: flex; justify-content: space-between; align-items: center;}
+        .inspector-data { font-family: monospace; font-size: 1.2rem; color: var(--highlight); }
+
+        .canvas-container { position: relative; background: #fff; border-radius: 4px; overflow: hidden; cursor: crosshair; }
+        canvas { display: block; width: 100%; height: 300px; }
+        
+        .axis-label { position: absolute; color: #8d8d99; font-size: 0.75rem; font-weight: bold; pointer-events: none; }
+        [v-cloak] { display: none; }
     </style>
 </head>
 <body>
 
-    <h2>Automated Resonance Sweeper</h2>
+    <div id="app" v-cloak>
+        <h2 style="margin-top: 0;">Analisador de Espectro & Ressonância</h2>
 
-    <div class="panel">
-        <div class="input-group">
-            <label>Start Freq (Hz) <input type="number" id="minFreq" value="100"></label>
-            <label>End Freq (Hz) <input type="number" id="maxFreq" value="3000"></label>
-            <label>Sweep Time (Sec) <input type="number" id="duration" value="10"></label>
+        <div class="card">
+            <div class="grid-3">
+                <label>Freq. Inicial (Hz) <input type="number" v-model.number="config.minFreq" :disabled="isRunning"></label>
+                <label>Freq. Final (Hz) <input type="number" v-model.number="config.maxFreq" :disabled="isRunning"></label>
+                <label>Duração (Segundos) <input type="number" v-model.number="config.duration" :disabled="isRunning"></label>
+            </div>
+            
+            <button @click="startSweep" :disabled="isRunning">
+                {{ isRunning ? 'Varredura em Execução...' : 'Iniciar Experimento' }}
+            </button>
+
+            <div class="status-bar" v-if="statusText">{{ statusText }}</div>
         </div>
-        
-        <button id="btnStart" onclick="startExperiment()">Start Auto-Sweep</button>
-        <div class="data-readout" id="status">Status: Ready</div>
-    </div>
 
-    <div class="panel" style="position: relative;">
-        <span id="lblMin" style="position: absolute; bottom: 25px; left: 25px; color: #888; font-size: 12px;">100 Hz</span>
-        <span id="lblMax" style="position: absolute; bottom: 25px; right: 25px; color: #888; font-size: 12px;">3000 Hz</span>
-        
-        <canvas id="graph" width="800" height="300"></canvas>
+        <div class="card" style="padding: 0; border: none;">
+            <div class="canvas-container">
+                <span class="axis-label" style="bottom: 10px; left: 15px;">{{ config.minFreq }} Hz</span>
+                <span class="axis-label" style="bottom: 10px; right: 15px;">{{ config.maxFreq }} Hz</span>
+                <span class="axis-label" style="top: 10px; left: 15px;">Máx: {{ currentScaleY.toFixed(1) }}%</span>
+                <span class="axis-label" style="bottom: 30px; left: 15px;">Mín: 0.0%</span>
+                
+                <canvas id="chartCanvas" width="800" height="300" @click="handleChartClick"></canvas>
+            </div>
+            
+            <div class="inspector" v-if="selectedPoint">
+                <span>Ponto Inspecionado:</span>
+                <span class="inspector-data">
+                    {{ Math.round(selectedPoint.f) }} Hz | {{ selectedPoint.a.toFixed(1) }} %
+                </span>
+            </div>
+            <div class="inspector" v-else style="color: #8d8d99; border-left-color: #323238;">
+                Clique em qualquer lugar do gráfico para inspecionar as coordenadas.
+            </div>
+        </div>
     </div>
 
     <script>
-        // --- UI Elements ---
-        const btnStart = document.getElementById('btnStart');
-        const statusLabel = document.getElementById('status');
-        const canvas = document.getElementById('graph');
-        const ctx = canvas.getContext('2d');
-        
-        // --- Global State ---
-        let dataPoints = [];
-        let audioCtxTone, oscillator;
-        let audioCtxMic, analyzer, micStream;
-        let animationId;
-        
-        // --- Sweep Parameters ---
-        let minF = 100, maxF = 3000, durationSec = 10;
-        let startTime = 0;
-        let isRunning = false;
+        const { createApp, ref, reactive, onMounted } = Vue;
 
-        async function startExperiment() {
-            if (isRunning) return;
-            
-            // 1. Grab the latest values from the inputs
-            minF = parseInt(document.getElementById('minFreq').value);
-            maxF = parseInt(document.getElementById('maxFreq').value);
-            durationSec = parseFloat(document.getElementById('duration').value);
+        createApp({
+            setup() {
+                const config = reactive({ minFreq: 100, maxFreq: 3000, duration: 10 });
+                const isRunning = ref(false);
+                const statusText = ref("Status: Aguardando início");
+                const selectedPoint = ref(null);
+                const currentScaleY = ref(10.0); // Teto dinâmico do eixo Y
+                
+                let dataPoints = [];
+                let audioCtxTone, oscillator, audioCtxMic, analyzer, micStream;
+                let animationFrameId, startTime, canvas, ctx;
 
-            // 2. Update Graph Boundary Labels
-            document.getElementById('lblMin').innerText = minF + " Hz";
-            document.getElementById('lblMax').innerText = maxF + " Hz";
+                const drawGrid = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.strokeStyle = '#f0f0f0';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    for(let i = 1; i < 10; i++) {
+                        ctx.moveTo(0, (canvas.height/10)*i);
+                        ctx.lineTo(canvas.width, (canvas.height/10)*i);
+                        ctx.moveTo((canvas.width/10)*i, 0);
+                        ctx.lineTo((canvas.width/10)*i, canvas.height);
+                    }
+                    ctx.stroke();
+                };
 
-            // 3. Clear previous experiment data
-            dataPoints = [];
-            drawGraph();
+                const updateChart = () => {
+                    // 1. Calcular o Auto-scaling do Eixo Y baseado no maior valor capturado
+                    if (dataPoints.length > 0) {
+                        const maxAmpRecorded = Math.max(...dataPoints.map(p => p.a));
+                        // Define o teto como o maior valor + 10% de margem, com um piso mínimo de 10% e teto de 100%
+                        currentScaleY.value = Math.min(100, Math.max(10, maxAmpRecorded * 1.1));
+                    } else {
+                        currentScaleY.value = 10.0;
+                    }
 
-            try {
-                // 4. Request Microphone Access First
-                statusLabel.innerText = "Requesting microphone...";
-                micStream = await navigator.mediaDevices.getUserMedia({
-                    audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false }
+                    drawGrid();
+                    if (!dataPoints.length) return;
+
+                    // 2. Renderizar a linha mapeando os pontos de acordo com a nova escala vertical
+                    ctx.beginPath();
+                    dataPoints.forEach((p, index) => {
+                        const x = ((p.f - config.minFreq) / (config.maxFreq - config.minFreq)) * canvas.width;
+                        const y = canvas.height - ((p.a / currentScaleY.value) * canvas.height);
+                        index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                    });
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = '#04d361';
+                    ctx.stroke();
+
+                    // 3. Renderizar marcador do ponto inspecionado adaptado à escala atual
+                    if (selectedPoint.value) {
+                        const sx = ((selectedPoint.value.f - config.minFreq) / (config.maxFreq - config.minFreq)) * canvas.width;
+                        const sy = canvas.height - ((selectedPoint.value.a / currentScaleY.value) * canvas.height);
+                        
+                        ctx.beginPath();
+                        ctx.arc(sx, sy, 6, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#8257e5';
+                        ctx.fill();
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                };
+
+                const handleChartClick = (event) => {
+                    if (!dataPoints.length) return;
+
+                    const rect = canvas.getBoundingClientRect();
+                    const clickX = event.clientX - rect.left;
+                    const scaleX = canvas.width / rect.width;
+                    const canvasX = clickX * scaleX;
+
+                    const clickedFreq = config.minFreq + (canvasX / canvas.width) * (config.maxFreq - config.minFreq);
+
+                    let closest = dataPoints[0];
+                    let minDiff = Math.abs(dataPoints[0].f - clickedFreq);
+
+                    for (let i = 1; i < dataPoints.length; i++) {
+                        let diff = Math.abs(dataPoints[i].f - clickedFreq);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            closest = dataPoints[i];
+                        }
+                    }
+
+                    selectedPoint.value = closest;
+                    updateChart(); // Redesenha aplicando a marcação na escala correta
+                };
+
+                const processAudioFrame = () => {
+                    if (!isRunning.value) return;
+
+                    const elapsed = (performance.now() - startTime) / 1000;
+                    if (elapsed >= config.duration) {
+                        finalizeSweep();
+                        return;
+                    }
+
+                    const currentFreq = config.minFreq + ((config.maxFreq - config.minFreq) * (elapsed / config.duration));
+                    const buffer = new Uint8Array(analyzer.frequencyBinCount);
+                    analyzer.getByteTimeDomainData(buffer);
+
+                    let min = 255, max = 0;
+                    for (let i = 0; i < buffer.length; i++) {
+                        if (buffer[i] < min) min = buffer[i];
+                        if (buffer[i] > max) max = buffer[i];
+                    }
+                    
+                    const amplitude = ((max - min) / 255.0) * 100;
+
+                    dataPoints.push({ f: currentFreq, a: amplitude });
+                    statusText.value = `Frequência: ${Math.round(currentFreq)} Hz | Volume: ${amplitude.toFixed(1)}%`;
+                    
+                    updateChart();
+                    animationFrameId = requestAnimationFrame(processAudioFrame);
+                };
+
+                const startSweep = async () => {
+                    if (isRunning.value) return;
+                    
+                    dataPoints = [];
+                    selectedPoint.value = null;
+                    updateChart();
+                    statusText.value = "Solicitando permissão do microfone...";
+
+                    try {
+                        micStream = await navigator.mediaDevices.getUserMedia({
+                            audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false }
+                        });
+                        
+                        isRunning.value = true;
+                        audioCtxMic = new (window.AudioContext || window.webkitAudioContext)();
+                        analyzer = audioCtxMic.createAnalyser();
+                        analyzer.fftSize = 2048;
+                        audioCtxMic.createMediaStreamSource(micStream).connect(analyzer);
+
+                        audioCtxTone = new (window.AudioContext || window.webkitAudioContext)();
+                        oscillator = audioCtxTone.createOscillator();
+                        oscillator.type = 'sine';
+                        
+                        const now = audioCtxTone.currentTime;
+                        oscillator.frequency.setValueAtTime(config.minFreq, now);
+                        oscillator.frequency.linearRampToValueAtTime(config.maxFreq, now + config.duration);
+                        
+                        oscillator.connect(audioCtxTone.destination);
+                        oscillator.start();
+
+                        startTime = performance.now();
+                        processAudioFrame();
+
+                    } catch (err) {
+                        statusText.value = "Erro: Permissão de microfone negada ou ambiente não seguro.";
+                        console.error(err);
+                        isRunning.value = false;
+                    }
+                };
+
+                const finalizeSweep = () => {
+                    isRunning.value = false;
+                    statusText.value = "Varredura concluída com sucesso.";
+                    
+                    if (oscillator) { oscillator.stop(); oscillator.disconnect(); }
+                    if (micStream) micStream.getTracks().forEach(t => t.stop());
+                    if (audioCtxMic) audioCtxMic.close();
+                    
+                    cancelAnimationFrame(animationFrameId);
+                };
+
+                onMounted(() => {
+                    canvas = document.getElementById('chartCanvas');
+                    ctx = canvas.getContext('2d');
+                    updateChart();
                 });
 
-                isRunning = true;
-                btnStart.disabled = true;
-                btnStart.innerText = "Experiment Running...";
-
-                // 5. Setup Microphone Analyzer
-                audioCtxMic = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioCtxMic.createMediaStreamSource(micStream);
-                analyzer = audioCtxMic.createAnalyser();
-                analyzer.fftSize = 2048;
-                source.connect(analyzer);
-
-                // 6. Setup Tone Generator
-                audioCtxTone = new (window.AudioContext || window.webkitAudioContext)();
-                oscillator = audioCtxTone.createOscillator();
-                oscillator.type = 'sine';
-                
-                // Set the starting frequency
-                oscillator.frequency.setValueAtTime(minF, audioCtxTone.currentTime);
-                
-                // Schedule the automated glide to the end frequency
-                oscillator.frequency.linearRampToValueAtTime(maxF, audioCtxTone.currentTime + durationSec);
-                
-                oscillator.connect(audioCtxTone.destination);
-                oscillator.start();
-
-                // 7. Start the Recording Loop
-                startTime = performance.now();
-                measureAndPlot();
-
-            } catch (err) {
-                alert("Microphone access failed. Ensure you are loading this via HTTPS.");
-                console.error(err);
-                resetUI();
+                return { config, isRunning, statusText, startSweep, handleChartClick, selectedPoint, currentScaleY };
             }
-        }
-
-        function measureAndPlot() {
-            if (!isRunning) return;
-
-            // Calculate exactly how many seconds have passed
-            let elapsedSec = (performance.now() - startTime) / 1000;
-            
-            // Check if the sweep time is over
-            if (elapsedSec >= durationSec) {
-                finishExperiment();
-                return;
-            }
-
-            // Mathematically calculate the current frequency being played
-            let currentFreq = minF + ((maxF - minF) * (elapsedSec / durationSec));
-
-            // Read Microphone Amplitude
-            const bufferLength = analyzer.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-            analyzer.getByteTimeDomainData(dataArray);
-
-            let min = 255, max = 0;
-            for (let i = 0; i < bufferLength; i++) {
-                if (dataArray[i] < min) min = dataArray[i];
-                if (dataArray[i] > max) max = dataArray[i];
-            }
-            
-            let amplitudePercent = ((max - min) / 255.0) * 100;
-
-            // Record data and update text
-            dataPoints.push({ f: currentFreq, a: amplitudePercent });
-            statusLabel.innerText = "Sweeping: " + Math.round(currentFreq) + " Hz | Vol: " + amplitudePercent.toFixed(1) + "%";
-            
-            drawGraph();
-
-            // Run this function again on the next screen refresh (approx 60 times a second)
-            animationId = requestAnimationFrame(measureAndPlot);
-        }
-
-        function finishExperiment() {
-            statusLabel.innerText = "Sweep Complete!";
-            
-            // Turn off the speaker
-            if (oscillator) {
-                oscillator.stop();
-                oscillator.disconnect();
-            }
-            
-            // Turn off the microphone
-            if (micStream) {
-                micStream.getTracks().forEach(track => track.stop());
-            }
-            if (audioCtxMic) audioCtxMic.close();
-            
-            resetUI();
-        }
-
-        function resetUI() {
-            isRunning = false;
-            btnStart.disabled = false;
-            btnStart.innerText = "Start Auto-Sweep";
-            cancelAnimationFrame(animationId);
-        }
-
-        function drawGraph() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw Background Grid
-            ctx.strokeStyle = '#eee';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            for(let i=1; i<10; i++) {
-                ctx.moveTo(0, (canvas.height/10)*i);
-                ctx.lineTo(canvas.width, (canvas.height/10)*i);
-                ctx.moveTo((canvas.width/10)*i, 0);
-                ctx.lineTo((canvas.width/10)*i, canvas.height);
-            }
-            ctx.stroke();
-
-            // Draw the Continuous Data Line
-            if (dataPoints.length > 0) {
-                ctx.beginPath();
-                for (let i = 0; i < dataPoints.length; i++) {
-                    let p = dataPoints[i];
-                    
-                    // Map the frequency to the X-axis based on user's Min and Max settings
-                    let x = ((p.f - minF) / (maxF - minF)) * canvas.width;
-                    // Map the amplitude to the Y-axis
-                    let y = canvas.height - ((p.a / 100) * canvas.height);
-                    
-                    if (i === 0) {
-                        ctx.moveTo(x, y);
-                    } else {
-                        ctx.lineTo(x, y);
-                    }
-                }
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = '#42b883';
-                ctx.stroke();
-            }
-        }
-        
-        // Draw the initial blank grid
-        drawGraph();
+        }).mount('#app');
     </script>
 </body>
 </html>
