@@ -6,7 +6,7 @@
     <title>Analisador Multicanal</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-        :root { --bg: #121214; --panel: #202024; --text: #e1e1e6; --primary: #04d361; --border: #323238; }
+        :root { --bg: #121214; --panel: #202024; --text: #e1e1e6; --primary: #04d361; --highlight: #8257e5; --border: #323238; }
         body { font-family: sans-serif; background-color: var(--bg); color: var(--text); padding: 1rem; }
         .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
         .grid-inputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem; }
@@ -16,8 +16,9 @@
         .channel-list { display: flex; gap: 0.5rem; margin: 1rem 0; overflow-x: auto; }
         .channel-btn { background: #323238; color: white; padding: 0.5rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; white-space: nowrap; }
         .channel-btn.active { border: 2px solid var(--primary); }
-        .canvas-container { position: relative; background: #fff; border-radius: 4px; }
+        .canvas-container { position: relative; background: #fff; border-radius: 4px; cursor: crosshair; }
         canvas { display: block; width: 100%; height: 250px; }
+        .inspector { margin-top: 1rem; padding: 0.8rem; background: #1a1a1e; border-left: 4px solid var(--highlight); border-radius: 4px; font-size: 0.9rem; }
     </style>
 </head>
 <body>
@@ -29,26 +30,20 @@
             <label>Fim (Hz)<input type="number" v-model.number="config.maxFreq"></label>
             <label>Dur (s)<input type="number" v-model.number="config.duration"></label>
         </div>
-
         <div class="channel-list">
-            <div v-for="ch in channels" :key="ch.id" 
-                 class="channel-btn" 
-                 :class="{active: activeChannelId === ch.id}"
-                 @click="activeChannelId = ch.id">
-                 {{ ch.name }}
-            </div>
+            <div v-for="ch in channels" :key="ch.id" class="channel-btn" :class="{active: activeChannelId === ch.id}" @click="activeChannelId = ch.id">{{ ch.name }}</div>
             <button @click="addChannel" style="width: auto; padding: 0.5rem">+</button>
         </div>
-        
-        <button @click="startSweep" :disabled="isRunning">
-            {{ isRunning ? 'Gravando...' : 'Gravar no ' + channels.find(c => c.id === activeChannelId).name }}
-        </button>
+        <button @click="startSweep" :disabled="isRunning">{{ isRunning ? 'Gravando...' : 'Gravar no ' + channels[activeChannelId].name }}</button>
         <button @click="clearActive" style="background:#f75a68; margin-top: 0.5rem;">Limpar Canal Ativo</button>
     </div>
 
     <div class="card">
         <div class="canvas-container">
-            <canvas id="chartCanvas" width="800" height="300"></canvas>
+            <canvas id="chartCanvas" width="800" height="300" @click="handleChartClick"></canvas>
+        </div>
+        <div class="inspector" v-if="selectedPoint">
+            Selecionado: <b>{{ Math.round(selectedPoint.f) }} Hz</b> | Volume: <b>{{ selectedPoint.a.toFixed(1) }}</b>
         </div>
     </div>
 </div>
@@ -65,16 +60,9 @@
             ]);
             const activeChannelId = ref(0);
             const isRunning = ref(false);
+            const selectedPoint = ref(null);
             
             let canvas, ctx, audioCtx, analyzer, micStream, oscillator, startTime, animationFrameId;
-
-            const addChannel = () => {
-                const id = channels.length;
-                const colors = ['#FF5733', '#33FF57', '#3357FF', '#F333FF'];
-                channels.push({ id, name: 'Ch ' + (id+1), data: [], color: colors[id % colors.length] });
-            };
-
-            const clearActive = () => { channels.find(c => c.id === activeChannelId.value).data = []; draw(); };
 
             const draw = () => {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -83,19 +71,42 @@
                     ctx.beginPath();
                     ch.data.forEach((p, i) => {
                         const x = ((p.f - config.minFreq) / (config.maxFreq - config.minFreq)) * canvas.width;
-                        const y = canvas.height - (p.a * 2); 
+                        const y = canvas.height - (p.a * 2);
                         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
                     });
-                    ctx.strokeStyle = ch.color;
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
+                    ctx.strokeStyle = ch.color; ctx.lineWidth = 2; ctx.stroke();
                 });
+                
+                // Desenhar marcador de ponto selecionado
+                if (selectedPoint.value) {
+                    const ch = channels.find(c => c.data.includes(selectedPoint.value));
+                    const x = ((selectedPoint.value.f - config.minFreq) / (config.maxFreq - config.minFreq)) * canvas.width;
+                    const y = canvas.height - (selectedPoint.value.a * 2);
+                    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2); ctx.fillStyle = ch.color; ctx.fill();
+                    ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+                }
+            };
+
+            const handleChartClick = (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const clickX = ((event.clientX - rect.left) / rect.width) * canvas.width;
+                const freq = config.minFreq + (clickX / canvas.width) * (config.maxFreq - config.minFreq);
+                
+                let closest = null; let minDiff = Infinity;
+                channels.forEach(ch => {
+                    ch.data.forEach(p => {
+                        let diff = Math.abs(p.f - freq);
+                        if (diff < minDiff) { minDiff = diff; closest = p; }
+                    });
+                });
+                selectedPoint.value = closest;
+                draw();
             };
 
             const startSweep = async () => {
                 isRunning.value = true;
-                const targetChannel = channels.find(c => c.id === activeChannelId.value);
-                targetChannel.data = [];
+                const target = channels[activeChannelId.value];
+                target.data = []; selectedPoint.value = null;
                 
                 micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false }});
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -103,10 +114,8 @@
                 audioCtx.createMediaStreamSource(micStream).connect(analyzer);
                 
                 oscillator = audioCtx.createOscillator();
-                oscillator.frequency.setValueAtTime(config.minFreq, audioCtx.currentTime);
                 oscillator.frequency.linearRampToValueAtTime(config.maxFreq, audioCtx.currentTime + config.duration);
-                oscillator.connect(audioCtx.destination);
-                oscillator.start();
+                oscillator.connect(audioCtx.destination); oscillator.start();
 
                 startTime = performance.now();
                 const loop = () => {
@@ -116,25 +125,21 @@
                     const freq = config.minFreq + ((config.maxFreq - config.minFreq) * (elapsed / config.duration));
                     const buffer = new Uint8Array(analyzer.frequencyBinCount);
                     analyzer.getByteTimeDomainData(buffer);
-                    let min = 255, max = 0;
-                    for (let b of buffer) { if(b < min) min = b; if(b > max) max = b; }
+                    let min=255, max=0; for(let b of buffer){ if(b<min) min=b; if(b>max) max=b; }
                     
-                    targetChannel.data.push({ f: freq, a: (max - min) });
-                    draw();
-                    animationFrameId = requestAnimationFrame(loop);
+                    target.data.push({ f: freq, a: (max - min) });
+                    draw(); animationFrameId = requestAnimationFrame(loop);
                 };
                 loop();
             };
 
-            const finalize = () => {
-                isRunning.value = false;
-                oscillator.stop(); micStream.getTracks().forEach(t => t.stop());
-                cancelAnimationFrame(animationFrameId);
-            };
+            const finalize = () => { isRunning.value = false; oscillator.stop(); micStream.getTracks().forEach(t => t.stop()); cancelAnimationFrame(animationFrameId); };
+            const addChannel = () => channels.push({ id: channels.length, name: 'Ch ' + (channels.length+1), data: [], color: '#'+Math.floor(Math.random()*16777215).toString(16) });
+            const clearActive = () => { channels[activeChannelId.value].data = []; selectedPoint.value = null; draw(); };
 
             onMounted(() => { canvas = document.getElementById('chartCanvas'); ctx = canvas.getContext('2d'); draw(); });
 
-            return { channels, activeChannelId, isRunning, startSweep, clearActive, config, addChannel };
+            return { channels, activeChannelId, isRunning, startSweep, clearActive, config, addChannel, handleChartClick, selectedPoint };
         }
     }).mount('#app');
 </script>
