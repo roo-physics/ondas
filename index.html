@@ -108,7 +108,15 @@
                 const target = channels[activeChannelId.value];
                 target.data = []; selectedPoint.value = null;
                 
-                micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false }});
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: { exact: false },
+                        noiseSuppression: { exact: false },
+                        autoGainControl: { exact: false },
+                        channelCount: 1,
+                        sampleRate: { ideal: 48000 } // Tente forçar uma taxa de amostragem mais alta
+                    }
+                });
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 analyzer = audioCtx.createAnalyser();
                 audioCtx.createMediaStreamSource(micStream).connect(analyzer);
